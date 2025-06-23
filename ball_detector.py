@@ -65,7 +65,9 @@ class BallDetector:
         x = tf.keras.layers.Dropout(0.3)(x)
         
         # Output: bounding box (x, y, width, height) + confidence
-        outputs = tf.keras.layers.Dense(5, activation='sigmoid', name='detection')(x)
+        bbox_outputs = tf.keras.layers.Dense(4, activation='sigmoid', name='bbox')(x)  # normalized coords
+        conf_output = tf.keras.layers.Dense(1, activation='sigmoid', name='confidence')(x)
+        outputs = tf.keras.layers.Concatenate(name='detection')([bbox_outputs, conf_output])
         
         model = tf.keras.Model(inputs=base_model.input, outputs=outputs)
         
@@ -92,7 +94,8 @@ class BallDetector:
         predictions = self.model.predict(img_batch)[0]
         
         # Parse predictions
-        x, y, w, h, confidence = predictions
+        x, y, w, h = predictions[:4]
+        confidence = predictions[4]
         
         # Convert normalized co-ordinates back to image coordinates
         img_h, img_w = image.shape[:2]
@@ -111,8 +114,10 @@ class BallDetector:
         
         return []
     
-    def save_model(self, model_path: str):
+    def save_model(self, model_path: str = 'balltracker/ball_detection_model.keras'):
         if self.model:
+            if not model_path.endswith('.keras'):
+                model_path += '.keras'
             self.model.save(model_path)
             logging.info(f"Model saved to {model_path}")
     

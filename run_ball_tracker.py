@@ -1,5 +1,3 @@
-
-
 import sys
 import os
 from pathlib import Path
@@ -143,7 +141,7 @@ def main():
                        help='Operation mode')
     parser.add_argument('--dataset', type=str, default='ball_dataset',
                        help='Path to ball dataset (for training)')
-    parser.add_argument('--model', type=str, default='balltracker/ball_detection_model.h5',
+    parser.add_argument('--model', type=str, default='balltracker/ball_detection_model.keras',
                        help='Path to trained model')
     parser.add_argument('--video', type=str,
                        help='Path to input video (for processing)')

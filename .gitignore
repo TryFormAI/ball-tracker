@@ -27,3 +27,8 @@ ball_dataset/
 *.tmp
 *.swp
 .DS_Store 
+
+models/
+
+# Ignoring all videos
+*.mp4

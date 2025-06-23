@@ -148,7 +148,7 @@ def train_model(dataset_path: str,
             tf.keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True),
             tf.keras.callbacks.ReduceLROnPlateau(patience=5, factor=0.5),
             tf.keras.callbacks.ModelCheckpoint(
-                'balltracker/best_model.h5',
+                'balltracker/best_model.keras',
                 save_best_only=True,
                 monitor='val_loss'
             ),
@@ -177,7 +177,7 @@ def train_model(dataset_path: str,
         logging.info(f"  - Best validation accuracy: {best_val_acc:.4f}")
         logging.info(f"  - Epochs trained: {len(history.history['loss'])}")
     logging.info("Saving trained model...")
-    detector.save_model('balltracker/ball_detection_model.h5')
+    detector.save_model('balltracker/ball_detection_model.keras')
     logging.info("Generating training plots...")
     plot_training_history(history)
     logging.info("=" * 60)
@@ -342,9 +342,9 @@ def main():
         )
         if detector:
             logging.info("Training completed successfully!")
-            logging.info("Model saved to: balltracker/ball_detection_model.h5")
+            logging.info("Model saved to: balltracker/ball_detection_model.keras")
             logging.info("Evaluating on test set...")
-            evaluate_model(args.dataset, 'balltracker/ball_detection_model.h5', batch_size=args.batch_size)
+            evaluate_model(args.dataset, 'balltracker/ball_detection_model.keras', batch_size=args.batch_size)
     except Exception as e:
         logging.error(f"Training failed: {e}")
         logging.exception("Full traceback:")
