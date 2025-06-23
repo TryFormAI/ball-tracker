@@ -1,0 +1,29 @@
+# Ignore model weights and checkpoints
+*.h5
+*.keras
+*.ckpt
+
+# Ignore logs and CSVs
+*.log
+*.csv
+
+# Ignore training plots and outputs
+*.png
+*.jpg
+*.mp4
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+
+# Ignore Jupyter notebooks
+*.ipynb
+
+# Ignore dataset (relative to balltracker or project root)
+ball_dataset/
+
+
+# Ignore temporary files
+*.tmp
+*.swp
+.DS_Store 
