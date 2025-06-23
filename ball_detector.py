@@ -26,8 +26,6 @@ class BallDetector:
             self.load_model(model_path)
     
     def build_model(self) -> tf.keras.Model:
-        """Build CNN model for ball detection"""
-        
         # Use EfficientNetB0 as backbone for good performance/speed balance
         base_model = tf.keras.applications.EfficientNetB0(
             include_top=False,
@@ -114,13 +112,11 @@ class BallDetector:
         return []
     
     def save_model(self, model_path: str):
-        """Save the trained model"""
         if self.model:
             self.model.save(model_path)
             logging.info(f"Model saved to {model_path}")
     
     def load_model(self, model_path: str):
-        """Load a trained model"""
         try:
             self.model = tf.keras.models.load_model(
                 model_path, 
