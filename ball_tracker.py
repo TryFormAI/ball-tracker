@@ -39,7 +39,7 @@ class BallTracker:
         ]
     
     def process_frame(self, frame: np.ndarray) -> np.ndarray:
-        """Process a single frame and return it with ball tracking and tracers"""
+
         
         self.frame_count += 1
         
@@ -261,7 +261,6 @@ class BallTracker:
         return self.trajectories
     
     def reset_tracking(self):
-        """Reset tracking state"""
         self.trajectories = []
         self.ball_states = []
         self.frame_count = 0
