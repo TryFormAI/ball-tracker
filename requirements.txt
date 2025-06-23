@@ -1,0 +1,7 @@
+tensorflow>=2.8
+opencv-python-headless
+numpy
+matplotlib
+scikit-learn
+albumentations
+h5py 

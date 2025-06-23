@@ -161,32 +161,6 @@ The system expects COCO format annotations with:
 - Golf ball category with ID 1
 - Bounding box annotations in [x, y, width, height] format
 
-## Troubleshooting
-
-### Common Issues
-
-1. **No balls detected**: 
-   - Check model confidence threshold
-   - Verify training data quality
-   - Ensure proper image preprocessing
-
-2. **Poor tracking performance**:
-   - Adjust `max_ball_distance` parameter
-   - Check video frame rate and quality
-   - Verify ball detection accuracy
-
-3. **Training issues**:
-   - Check dataset structure
-   - Verify COCO annotation format
-   - Monitor training loss/accuracy
-
-### Performance Tips
-
-- Use GPU for training (TensorFlow will auto-detect)
-- Reduce batch size if memory issues occur
-- Adjust learning rate based on training progress
-- Use data augmentation for better generalization
-
 ## Examples
 
 ### Basic Training
@@ -222,14 +196,7 @@ python run_ball_tracker.py --mode test --image ball_image.jpg
 python run_ball_tracker.py --mode test --image ball_image.jpg --model custom_model.h5
 ```
 
-## Contributing
-
-To extend the system:
-1. Modify `BallDetector` for different detection architectures
-2. Enhance `BallTracker` with advanced tracking algorithms
-3. Add new visualization features
-4. Implement additional data augmentation techniques
 
 ## License
 
-This project is part of the golf swing analysis system. 
+This project is licensed under the MIT license.
