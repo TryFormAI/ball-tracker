@@ -16,7 +16,6 @@ sys.path.append(str(Path(__file__).parent.parent))
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def train_model(dataset_path: str, epochs: int = 50, batch_size: int = 32):
-    """Train the ball detection model"""
     
     logging.info("Training ball detection model...")
     
@@ -39,7 +38,6 @@ def process_video(video_path: str,
                   model_path: str = None,
                   output_path: str = None,
                   show_preview: bool = True):
-    """Process a video with ball tracking"""
     
     logging.info(f"Processing video: {video_path}")
     
@@ -57,7 +55,6 @@ def process_video(video_path: str,
     return trajectories
 
 def test_detection_on_image(image_path: str, model_path: str = None):
-    """Test ball detection on a single image"""
     
     logging.info(f"Testing detection on image: {image_path}")
     
@@ -104,7 +101,6 @@ def test_detection_on_image(image_path: str, model_path: str = None):
     return detections
 
 def analyze_trajectory(trajectories: list):
-    """Analyze ball trajectory data"""
     
     if not trajectories:
         logging.info("No trajectories to analyze")

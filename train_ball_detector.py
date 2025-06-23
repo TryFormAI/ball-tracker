@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Training script for ball detection model (memory efficient)
-"""
+
 
 import sys
 import os
