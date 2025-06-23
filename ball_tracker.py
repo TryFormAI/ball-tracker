@@ -258,7 +258,6 @@ class BallTracker:
         logging.info(f"Processing complete. Processed {frame_count} frames.")
     
     def get_trajectory_data(self) -> List[List[Dict]]:
-        """Get trajectory data for analysis"""
         return self.trajectories
     
     def reset_tracking(self):
