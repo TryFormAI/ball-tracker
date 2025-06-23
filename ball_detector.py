@@ -13,6 +13,25 @@ import albumentations as A
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+def detection_loss(y_true, y_pred):
+    # Separate bounding box and confidence predictions
+    bbox_true = y_true[:, :4]
+    conf_true = y_true[:, 4]
+    bbox_pred = y_pred[:, :4]
+    conf_pred = y_pred[:, 4]
+    
+    # Bounding box loss (MSE)
+    mse = tf.keras.losses.MeanSquaredError()
+    bbox_loss = mse(bbox_true, bbox_pred)
+    
+    # Confidence loss (Binary crossentropy)
+    conf_loss = tf.keras.losses.binary_crossentropy(conf_true, conf_pred)
+    
+    # Combined loss
+    total_loss = bbox_loss + 2.0 * conf_loss
+    
+    return total_loss
+
 class BallDetector:
     # Using CNN architecture for ball detection
     
@@ -53,30 +72,11 @@ class BallDetector:
         # Compile model
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
-            loss=self._detection_loss,
+            loss=detection_loss,
             metrics=['accuracy']
         )
         
         return model
-    
-    def _detection_loss(self, y_true, y_pred):
-        # Separate bounding box and confidence predictions
-        bbox_true = y_true[:, :4]
-        conf_true = y_true[:, 4]
-        bbox_pred = y_pred[:, :4]
-        conf_pred = y_pred[:, 4]
-        
-        # Bounding box loss (MSE)
-        mse = tf.keras.losses.MeanSquaredError()
-        bbox_loss = mse(bbox_true, bbox_pred)
-        
-        # Confidence loss (Binary crossentropy)
-        conf_loss = tf.keras.losses.binary_crossentropy(conf_true, conf_pred)
-        
-        # Combined loss
-        total_loss = bbox_loss + 2.0 * conf_loss
-        
-        return total_loss
     
     def detect_balls(self, image: np.ndarray) -> List[Dict]:
         
@@ -120,7 +120,7 @@ class BallDetector:
         try:
             self.model = tf.keras.models.load_model(
                 model_path, 
-                custom_objects={'detection_loss': self._detection_loss}
+                custom_objects={'detection_loss': detection_loss}
             )
             logging.info(f"Model loaded from {model_path}")
         except Exception as e:
