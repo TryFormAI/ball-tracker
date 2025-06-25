@@ -6,7 +6,7 @@ import h5py
 from pathlib import Path
 import logging
 from typing import List, Tuple, Dict, Optional
-import matplotlib.pyplot as plt
+import matplotlib.pyplot.plt
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_score, recall_score, f1_score
 import albumentations as A
@@ -69,8 +69,8 @@ def detection_loss(y_true, y_pred):
     conf_loss = tf.reduce_mean(conf_loss) # mean over all samples
     
     # combined loss
-    # the weight (2.0) is a hyperparameter for balancing localization and classification
-    total_loss = bbox_loss + 2.0 * conf_loss
+    # increased weight for bbox_loss to prioritize localization
+    total_loss = 10.0 * bbox_loss + 1.0 * conf_loss # changed weight to 10.0 for bbox_loss
     
     return total_loss
 
