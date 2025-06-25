@@ -6,7 +6,7 @@ import h5py
 from pathlib import Path
 import logging
 from typing import List, Tuple, Dict, Optional
-import matplotlib.pyplot.plt
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_score, recall_score, f1_score
 import albumentations as A
