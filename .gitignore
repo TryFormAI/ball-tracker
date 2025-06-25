@@ -33,3 +33,5 @@ models/
 # Ignoring all videos
 *.mp4
 *.mov
+
+cmd.txt

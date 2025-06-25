@@ -170,4 +170,3 @@ class BallDetector:
 
 if __name__ == "__main__":
     detector = BallDetector()
-    # example usage (will not run without actual dataset or training)

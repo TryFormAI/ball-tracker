@@ -6,7 +6,6 @@ import argparse
 import json
 import numpy as np
 import matplotlib.pyplot as plt
-from ball_detector import BallDetector
 import cv2
 import tensorflow as tf
 import time
@@ -27,8 +26,7 @@ logging.basicConfig(
     ]
 )
 
-# Import the BallDetector from your module
-# Assuming the corrected BallDetector is in ball_detector.py
+
 from ball_detector import BallDetector, detection_loss, calculate_iou_tf
 
 # Define custom metrics for evaluation
@@ -47,17 +45,29 @@ class MeanIoUForBBoxes(tf.keras.metrics.Mean):
         # only consider positive samples (where a ball exists)
         object_mask = tf.cast(conf_true, dtype=tf.bool)
         
-        # ensure there are positive samples to avoid issues with empty tensors
-        if tf.reduce_sum(tf.cast(object_mask, tf.float32)) > 0:
-            bbox_true_pos = tf.boolean_mask(bbox_true, object_mask)
-            bbox_pred_pos = tf.boolean_mask(bbox_pred, object_mask)
+        # calculate sum of positive samples
+        num_positive_samples = tf.reduce_sum(tf.cast(object_mask, tf.float32))
 
-            # calculate IoU for positive samples
-            iou = calculate_iou_tf(bbox_true_pos, bbox_pred_pos)
-            
-            # update total IoU and count
-            self.total_iou.assign_add(tf.reduce_sum(iou))
-            self.num_examples.assign_add(tf.cast(tf.shape(iou)[0], tf.float32))
+        # use tf.cond to conditionally calculate iou and update state
+        # this replaces the if statement that caused the symbolic tensor error
+        tf.cond(
+            num_positive_samples > 0,
+            lambda: self._update_positive_samples_state(bbox_true, bbox_pred, object_mask),
+            lambda: None # do nothing if no positive samples
+        )
+
+    # helper method to update state for positive samples
+    def _update_positive_samples_state(self, bbox_true, bbox_pred, object_mask):
+        bbox_true_pos = tf.boolean_mask(bbox_true, object_mask)
+        bbox_pred_pos = tf.boolean_mask(bbox_pred, object_mask)
+
+        # calculate IoU for positive samples
+        iou = calculate_iou_tf(bbox_true_pos, bbox_pred_pos)
+        
+        # update total IoU and count
+        self.total_iou.assign_add(tf.reduce_sum(iou))
+        self.num_examples.assign_add(tf.cast(tf.shape(iou)[0], tf.float32))
+
 
     def result(self):
         return tf.where(tf.equal(self.num_examples, 0), 0.0, self.total_iou / self.num_examples)
@@ -202,6 +212,7 @@ class BallDatasetSequence(Sequence):
             return np.array([]), np.array([]) 
 
         return np.array(batch_imgs), np.array(batch_labels)
+
 
 def train_model(dataset_path: str,
                 epochs: int = 50,
@@ -432,10 +443,7 @@ def evaluate_model(dataset_path: str, model_path: str, batch_size: int = 32):
     
     logging.info(f"  - Evaluation time: {evaluation_time:.2f} seconds")
     
-    # you can add more detailed, post-evaluation metrics here if needed,
-    # such as calculating precise precision/recall/F1 based on confidence and IoU thresholds.
-    # however, the custom metrics `MeanIoUForBBoxes` and `ConfAccuracy` already give good indicators.
-
+    
     logging.info("=" * 40)
     logging.info("EVALUATION COMPLETED")
     logging.info("=" * 40)
