@@ -12,9 +12,13 @@ import time
 from datetime import datetime
 from tensorflow.keras.utils import Sequence
 import albumentations as A
+import sys
+import os
 
-# Add parent directory to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
+
+#testing
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 
 # Set up detailed logging
 logging.basicConfig(
