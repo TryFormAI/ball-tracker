@@ -51,9 +51,8 @@ class BallDetector:
             weights='imagenet',
             input_shape=self.input_shape
         )
-        
-        # Freeze base model layers
-        base_model.trainable = False
+        # Unfreeze the backbone for transfer learning
+        base_model.trainable = True
         
         # Add detection head
         x = base_model.output
@@ -73,7 +72,7 @@ class BallDetector:
         
         # Compile model
         model.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+            optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
             loss=detection_loss,
             metrics=['accuracy']
         )
