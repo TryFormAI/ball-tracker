@@ -12,13 +12,14 @@ import time
 from datetime import datetime
 from tensorflow.keras.utils import Sequence
 import albumentations as A
-import sys
-import os
 
+# Fix for Colab import issues - force add current directory to path
+current_dir = Path(__file__).parent.absolute()
+sys.path.insert(0, str(current_dir))
 
-#testing
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+# Clear any cached modules to force fresh import
+if 'ball_detector' in sys.modules:
+    del sys.modules['ball_detector']
 
 # Set up detailed logging
 logging.basicConfig(
@@ -30,7 +31,7 @@ logging.basicConfig(
     ]
 )
 
-
+# Now import the ball_detector module
 from ball_detector import BallDetector, detection_loss, calculate_iou_tf
 
 # Define custom metrics for evaluation
