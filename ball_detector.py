@@ -53,15 +53,15 @@ def detection_loss(y_true, y_pred):
     object_mask = tf.cast(conf_true, dtype=tf.bool)
 
     # bounding box loss (only for positive samples)
-    bbox_loss = 0.0
-    # ensure there are positive samples to avoid issues with empty tensors
-    if tf.reduce_sum(tf.cast(object_mask, tf.float32)) > 0:
-        bbox_true_pos = tf.boolean_mask(bbox_true, object_mask)
-        bbox_pred_pos = tf.boolean_mask(bbox_pred, object_mask)
+    # calculate sum of positive samples
+    num_positive_samples = tf.reduce_sum(tf.cast(object_mask, tf.float32))
 
-        # using 1 - IoU as localization loss for simplicity. More advanced: GIoU, DIoU, CIoU.
-        iou = calculate_iou_tf(bbox_true_pos, bbox_pred_pos)
-        bbox_loss = tf.reduce_mean(1.0 - iou) # mean over positive samples
+    # use tf.where to conditionally calculate bbox_loss
+    bbox_loss = tf.where(
+        num_positive_samples > 0,
+        tf.reduce_mean(1.0 - calculate_iou_tf(tf.boolean_mask(bbox_true, object_mask), tf.boolean_mask(bbox_pred, object_mask))),
+        0.0
+    )
 
     # confidence loss (Binary Crossentropy)
     # using 'from_logits=False' since sigmoid activation is used in the model output
