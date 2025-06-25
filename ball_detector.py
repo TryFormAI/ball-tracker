@@ -70,11 +70,15 @@ class BallDetector:
         
         model = tf.keras.Model(inputs=base_model.input, outputs=outputs)
         
+        # Custom bounding box MAE metric
+        def bbox_mae(y_true, y_pred):
+            return tf.reduce_mean(tf.abs(y_true[:, :4] - y_pred[:, :4]))
+        
         # Compile model
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
             loss=detection_loss,
-            metrics=['accuracy']
+            metrics=[bbox_mae]
         )
         
         return model
