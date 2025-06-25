@@ -74,6 +74,29 @@ def detection_loss(y_true, y_pred):
     
     return total_loss
 
+@tf.keras.utils.register_keras_serializable()
+class MeanIoUForBBoxes(tf.keras.metrics.Metric):
+    def __init__(self, name='mean_iou_for_bboxes', **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.total_iou = self.add_weight(name='total_iou', initializer='zeros')
+        self.count = self.add_weight(name='count', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        mask = tf.cast(y_true[:, 4] > 0.5, tf.bool)
+        true_boxes = tf.boolean_mask(y_true[:, :4], mask)
+        pred_boxes = tf.boolean_mask(y_pred[:, :4], mask)
+        if tf.size(true_boxes) > 0:
+            iou = calculate_iou_tf(true_boxes, pred_boxes)
+            self.total_iou.assign_add(tf.reduce_sum(iou))
+            self.count.assign_add(tf.cast(tf.size(iou), tf.float32))
+
+    def result(self):
+        return tf.math.divide_no_nan(self.total_iou, self.count)
+
+    def reset_states(self):
+        self.total_iou.assign(0.0)
+        self.count.assign(0.0)
+
 class BallDetector:
     # Using CNN architecture for ball detection
     
@@ -115,10 +138,11 @@ class BallDetector:
         
         model = tf.keras.Model(inputs=base_model.input, outputs=outputs)
         
-        # Compile model
+        # Compile model with custom metric
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
-            loss=detection_loss
+            loss=detection_loss,
+            metrics=[MeanIoUForBBoxes()]
         )
         logging.info("Model built successfully.")
         return model
@@ -161,7 +185,11 @@ class BallDetector:
         try:
             self.model = tf.keras.models.load_model(
                 model_path, 
-                custom_objects={'detection_loss': detection_loss, 'calculate_iou_tf': calculate_iou_tf}
+                custom_objects={
+                    'detection_loss': detection_loss,
+                    'calculate_iou_tf': calculate_iou_tf,
+                    'MeanIoUForBBoxes': MeanIoUForBBoxes
+                }
             )
             logging.info(f"Model loaded from {model_path}")
         except Exception as e:
