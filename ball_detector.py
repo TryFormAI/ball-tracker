@@ -13,6 +13,35 @@ import albumentations as A
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+def calculate_iou_tf(box1, box2):
+    # box: [x, y, w, h] (top-left, width, height)
+    box1_x_min = box1[..., 0]
+    box1_y_min = box1[..., 1]
+    box1_x_max = box1[..., 0] + box1[..., 2]
+    box1_y_max = box1[..., 1] + box1[..., 3]
+
+    box2_x_min = box2[..., 0]
+    box2_y_min = box2[..., 1]
+    box2_x_max = box2[..., 0] + box2[..., 2]
+    box2_y_max = box2[..., 1] + box2[..., 3]
+
+    inter_x_min = tf.maximum(box1_x_min, box2_x_min)
+    inter_y_min = tf.maximum(box1_y_min, box2_y_min)
+    inter_x_max = tf.minimum(box1_x_max, box2_x_max)
+    inter_y_max = tf.minimum(box1_y_max, box2_y_max)
+
+    inter_width = tf.maximum(0.0, inter_x_max - inter_x_min)
+    inter_height = tf.maximum(0.0, inter_y_max - inter_y_min)
+    inter_area = inter_width * inter_height
+
+    box1_area = box1[..., 2] * box1[..., 3]
+    box2_area = box2[..., 2] * box2[..., 3]
+    union_area = box1_area + box2_area - inter_area
+
+    # avoid division by zero
+    iou = tf.where(tf.equal(union_area, 0), 0.0, inter_area / union_area)
+    return iou
+
 def detection_loss(y_true, y_pred):
     # Separate bounding box and confidence predictions
     bbox_true = y_true[:, :4]
@@ -20,14 +49,27 @@ def detection_loss(y_true, y_pred):
     bbox_pred = y_pred[:, :4]
     conf_pred = y_pred[:, 4]
     
-    # Bounding box loss (MSE)
-    mse = tf.keras.losses.MeanSquaredError()
-    bbox_loss = mse(bbox_true, bbox_pred)
-    
-    # Confidence loss (Binary crossentropy)
+    # mask for positive samples (where an object is present in y_true)
+    object_mask = tf.cast(conf_true, dtype=tf.bool)
+
+    # bounding box loss (only for positive samples)
+    bbox_loss = 0.0
+    # ensure there are positive samples to avoid issues with empty tensors
+    if tf.reduce_sum(tf.cast(object_mask, tf.float32)) > 0:
+        bbox_true_pos = tf.boolean_mask(bbox_true, object_mask)
+        bbox_pred_pos = tf.boolean_mask(bbox_pred, object_mask)
+
+        # using 1 - IoU as localization loss for simplicity. More advanced: GIoU, DIoU, CIoU.
+        iou = calculate_iou_tf(bbox_true_pos, bbox_pred_pos)
+        bbox_loss = tf.reduce_mean(1.0 - iou) # mean over positive samples
+
+    # confidence loss (Binary Crossentropy)
+    # using 'from_logits=False' since sigmoid activation is used in the model output
     conf_loss = tf.keras.losses.binary_crossentropy(conf_true, conf_pred)
+    conf_loss = tf.reduce_mean(conf_loss) # mean over all samples
     
-    # Combined loss
+    # combined loss
+    # the weight (2.0) is a hyperparameter for balancing localization and classification
     total_loss = bbox_loss + 2.0 * conf_loss
     
     return total_loss
@@ -43,6 +85,9 @@ class BallDetector:
         
         if model_path and Path(model_path).exists():
             self.load_model(model_path)
+        else: # build model immediately if no path given, or path invalid
+            logging.info("Model path not provided or model does not exist. A new model will be built.")
+            self.model = self.build_model()
     
     def build_model(self) -> tf.keras.Model:
         # Use EfficientNetB0 as backbone for good performance/speed balance
@@ -70,17 +115,12 @@ class BallDetector:
         
         model = tf.keras.Model(inputs=base_model.input, outputs=outputs)
         
-        # Custom bounding box MAE metric
-        def bbox_mae(y_true, y_pred):
-            return tf.reduce_mean(tf.abs(y_true[:, :4] - y_pred[:, :4]))
-        
         # Compile model
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
-            loss=detection_loss,
-            metrics=[bbox_mae]
+            loss=detection_loss
         )
-        
+        logging.info("Model built successfully.")
         return model
     
     def detect_balls(self, image: np.ndarray) -> List[Dict]:
@@ -92,8 +132,7 @@ class BallDetector:
         img_batch = np.expand_dims(img_normalized, axis=0)
         # Predict
         predictions = self.model.predict(img_batch)[0]
-        print("Model raw predictions:", predictions)  # Debug print
-        # Parse predictions
+        # parse predictions
         x, y, w, h = predictions[:4]
         confidence = predictions[4]
         # Convert normalized co-ordinates back to image coordinates
@@ -102,8 +141,7 @@ class BallDetector:
         y_pixel = int(y * img_h)
         w_pixel = int(w * img_w)
         h_pixel = int(h * img_h)
-        print(f"Bounding box (pixels): x={x_pixel}, y={y_pixel}, w={w_pixel}, h={h_pixel}, confidence={confidence}")  # Debug print
-        # Filter by confidence
+        # filter by confidence
         if confidence > self.confidence_threshold:
             return [{
                 'bbox': [x_pixel, y_pixel, w_pixel, h_pixel],
@@ -123,7 +161,7 @@ class BallDetector:
         try:
             self.model = tf.keras.models.load_model(
                 model_path, 
-                custom_objects={'detection_loss': detection_loss}
+                custom_objects={'detection_loss': detection_loss, 'calculate_iou_tf': calculate_iou_tf}
             )
             logging.info(f"Model loaded from {model_path}")
         except Exception as e:
@@ -132,6 +170,4 @@ class BallDetector:
 
 if __name__ == "__main__":
     detector = BallDetector()
-    
-    # Load pre-trained model
-    # detector.load_model('balltracker/ball_detection_model.h5') 
+    # example usage (will not run without actual dataset or training)
