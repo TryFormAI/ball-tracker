@@ -81,29 +81,25 @@ class BallDetector:
         return model
     
     def detect_balls(self, image: np.ndarray) -> List[Dict]:
-        
         if self.model is None:
             raise ValueError("Model not loaded. Please load or train a model first.")
-        
         # Preprocess image
         img_resized = cv2.resize(image, (self.input_shape[1], self.input_shape[0]))
         img_normalized = img_resized / 255.0
         img_batch = np.expand_dims(img_normalized, axis=0)
-        
         # Predict
         predictions = self.model.predict(img_batch)[0]
-        
+        print("Model raw predictions:", predictions)  # Debug print
         # Parse predictions
         x, y, w, h = predictions[:4]
         confidence = predictions[4]
-        
         # Convert normalized co-ordinates back to image coordinates
         img_h, img_w = image.shape[:2]
         x_pixel = int(x * img_w)
         y_pixel = int(y * img_h)
         w_pixel = int(w * img_w)
         h_pixel = int(h * img_h)
-        
+        print(f"Bounding box (pixels): x={x_pixel}, y={y_pixel}, w={w_pixel}, h={h_pixel}, confidence={confidence}")  # Debug print
         # Filter by confidence
         if confidence > self.confidence_threshold:
             return [{
@@ -111,7 +107,6 @@ class BallDetector:
                 'confidence': float(confidence),
                 'center': (x_pixel + w_pixel//2, y_pixel + h_pixel//2)
             }]
-        
         return []
     
     def save_model(self, model_path: str = 'balltracker/ball_detection_model.keras'):

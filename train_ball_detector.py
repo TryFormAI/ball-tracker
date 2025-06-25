@@ -93,6 +93,9 @@ class BallDatasetSequence(Sequence):
                     break
             batch_imgs.append(img_normalized)
             batch_labels.append(label)
+        # Debug: print first 5 labels of the first batch
+        if idx == 0:
+            print("Sample batch labels (first 5):", np.array(batch_labels)[:5])
         # If some images failed to load, batch may be smaller
         return np.array(batch_imgs), np.array(batch_labels)
 
