@@ -15,7 +15,6 @@ import tensorflow as tf
 import time
 from datetime import datetime
 from tensorflow.keras.utils import Sequence
-from tensorflow.keras import mixed_precision
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
@@ -29,8 +28,6 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
-
-mixed_precision.set_global_policy('mixed_float16')
 
 class BallDatasetSequence(Sequence):
     def __init__(self, dataset_path, split, batch_size=32, input_shape=(224, 224, 3), shuffle=True, **kwargs):
