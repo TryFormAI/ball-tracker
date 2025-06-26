@@ -5,210 +5,244 @@ import logging
 import argparse
 import cv2
 import numpy as np
-from ball_detector import BallDetector
-from ball_tracker import BallTracker
+import tensorflow as tf
+import time
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Import the BallDetector and necessary custom objects
+from ball_detector import BallDetector, detection_loss, calculate_iou_tf, calculate_ciou_tf
 
-def train_model(dataset_path: str, epochs: int = 50, batch_size: int = 32):
-    
-    logging.info("Training ball detection model...")
-    
-    detector = BallDetector()
-    
-    annotations_file = Path(dataset_path) / "annotations.json"
-    images_dir = Path(dataset_path) / "images"
-    
-    history = detector.train(
-        coco_path=str(annotations_file),
-        images_dir=str(images_dir),
-        epochs=epochs,
-        batch_size=batch_size
-    )
-    
-    logging.info("Training completed!")
-    return detector
+# Set up detailed logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('balltracker/inference.log'),
+        logging.StreamHandler()
+    ]
+)
 
-def process_video(video_path: str, 
-                  model_path: str = None,
-                  output_path: str = None,
-                  show_preview: bool = True):
+def draw_bbox(image: np.ndarray, detections: list, target_size: tuple = None) -> np.ndarray:
+    # draw bounding boxes on the image
+    display_image = image.copy()
     
-    logging.info(f"Processing video: {video_path}")
-    
-    # Initialize tracker
-    tracker = BallTracker(detector_model_path=model_path)
-    
-    # Process video
-    tracker.process_video(video_path, output_path)
-    
-    # Get trajectory data
-    trajectories = tracker.get_trajectory_data()
-    
-    logging.info(f"Processing complete. Found {len(trajectories)} ball trajectories.")
-    
-    return trajectories
+    # if a target_size is provided, it means the detection coordinates are for a resized image
+    # and need to be scaled back to the display_image's original size
+    if target_size:
+        original_h, original_w = image.shape[:2]
+        target_w, target_h = target_size[0], target_size[1] # target_size is (width, height)
+        
+        # scale factors based on the input_shape of the model (e.g., 224x224)
+        scale_x = original_w / target_w
+        scale_y = original_h / target_h
+    else:
+        # no scaling needed if detections are already in original image coordinates
+        scale_x, scale_y = 1.0, 1.0
 
-def test_detection_on_image(image_path: str, model_path: str = None):
-    
-    logging.info(f"Testing detection on image: {image_path}")
-    
-    # Load image
+    for detection in detections:
+        bbox = detection['bbox']
+        confidence = detection['confidence']
+
+        # scale bbox coordinates if necessary
+        x, y, w, h = int(bbox[0] * scale_x), int(bbox[1] * scale_y), \
+                     int(bbox[2] * scale_x), int(bbox[3] * scale_y)
+        
+        # ensure coordinates are valid integers
+        x, y, w, h = max(0, x), max(0, y), max(0, w), max(0, h)
+
+        # draw rectangle
+        color = (0, 255, 0) # green color for bounding box
+        thickness = 2
+        cv2.rectangle(display_image, (x, y), (x + w, y + h), color, thickness)
+
+        # put text (confidence)
+        text = f"Ball: {confidence:.2f}"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.7
+        font_thickness = 2
+        text_size = cv2.getTextSize(text, font, font_scale, font_thickness)[0]
+        
+        # position text slightly above the bounding box
+        text_x = x
+        text_y = y - 10 if y - 10 > 10 else y + h + text_size[1] + 10
+        
+        # draw a filled rectangle behind the text for better readability
+        cv2.rectangle(display_image, (text_x, text_y - text_size[1] - 5), 
+                      (text_x + text_size[0], text_y + 5), color, -1)
+        cv2.putText(display_image, text, (text_x, text_y), font, font_scale, (0, 0, 0), font_thickness, cv2.LINE_AA)
+
+    return display_image
+
+def process_image(detector: BallDetector, image_path: str, output_path: str = None):
+    # process a single image file
+    if not Path(image_path).exists():
+        logging.error(f"Image file not found: {image_path}")
+        return
+
+    logging.info(f"Processing image: {image_path}")
     image = cv2.imread(image_path)
     if image is None:
         logging.error(f"Could not load image: {image_path}")
         return
     
-    # Initialize detector
-    detector = BallDetector(model_path)
+    # convert to rgb for model input
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     
-    # Detect balls
-    detections = detector.detect_balls(image)
+    start_time = time.time()
+    detections = detector.detect_balls(image_rgb)
+    end_time = time.time()
+    inference_time = (end_time - start_time) * 1000 # convert to ms
     
-    # Draw detections
-    output_image = image.copy()
-    for detection in detections:
-        bbox = detection['bbox']
-        center = detection['center']
-        confidence = detection['confidence']
-        
-        # Draw bounding box
-        cv2.rectangle(output_image, 
-                     (bbox[0], bbox[1]), 
-                     (bbox[0] + bbox[2], bbox[1] + bbox[3]), 
-                     (0, 255, 0), 2)
-        
-        # Draw center point
-        cv2.circle(output_image, center, 5, (255, 0, 0), -1)
-        
-        # Draw confidence text
-        cv2.putText(output_image, f"{confidence:.2f}", 
-                   (bbox[0], bbox[1] - 10), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+    logging.info(f"Detection time: {inference_time:.2f} ms")
     
-    # Save output
-    output_path = f"balltracker/detection_test_{Path(image_path).stem}.jpg"
-    cv2.imwrite(output_path, output_image)
-    
-    logging.info(f"Detection test complete. Output saved to: {output_path}")
-    logging.info(f"Found {len(detections)} balls")
-    
-    return detections
+    # target_size is the input_shape of the model (width, height)
+    display_image = draw_bbox(image, detections, target_size=(detector.input_shape[1], detector.input_shape[0]))
 
-def analyze_trajectory(trajectories: list):
-    
-    if not trajectories:
-        logging.info("No trajectories to analyze")
+    if output_path:
+        cv2.imwrite(output_path, display_image)
+        logging.info(f"Processed image saved to: {output_path}")
+    else:
+        cv2.imshow("Ball Detection", display_image)
+        cv2.waitKey(0) # wait indefinitely for a key press
+        cv2.destroyAllWindows()
+
+def process_video(detector: BallDetector, video_path: str, output_path: str = None, webcam_id: int = None):
+    # process a video file or webcam feed
+    if webcam_id is not None:
+        cap = cv2.VideoCapture(webcam_id)
+        logging.info(f"Opening webcam: {webcam_id}")
+    else:
+        if not Path(video_path).exists():
+            logging.error(f"Video file not found: {video_path}")
+            return
+        cap = cv2.VideoCapture(video_path)
+        logging.info(f"Opening video file: {video_path}")
+
+    if not cap.isOpened():
+        logging.error("Error: Could not open video stream.")
         return
+
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
     
-    print("\n=== Trajectory Analysis ===")
-    
-    for i, trajectory in enumerate(trajectories):
-        if not trajectory:
-            continue
-            
-        print(f"\nBall {i}:")
-        print(f"  Trajectory points: {len(trajectory)}")
+    out = None
+    if output_path:
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v') # Codec for .mp4 files
+        out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
+        logging.info(f"Writing output video to: {output_path}")
+
+    logging.info("Starting video processing. Press 'q' to quit.")
+
+    frame_count = 0
+    total_inference_time = 0
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            logging.info("End of video stream or error reading frame.")
+            break
+
+        frame_count += 1
         
-        if len(trajectory) >= 2:
-            # Calculate trajectory statistics
-            x_coords = [point['center'][0] for point in trajectory]
-            y_coords = [point['center'][1] for point in trajectory]
-            
-            # Distance traveled
-            total_distance = 0
-            for j in range(1, len(trajectory)):
-                pt1 = trajectory[j-1]['center']
-                pt2 = trajectory[j]['center']
-                distance = np.sqrt((pt2[0] - pt1[0])**2 + (pt2[1] - pt1[1])**2)
-                total_distance += distance
-            
-            print(f"  Total distance: {total_distance:.1f} pixels")
-            print(f"  X range: {min(x_coords)} - {max(x_coords)}")
-            print(f"  Y range: {min(y_coords)} - {max(y_coords)}")
-            
-            # Average confidence
-            avg_confidence = np.mean([point['confidence'] for point in trajectory])
-            print(f"  Average confidence: {avg_confidence:.3f}")
+        # convert to rgb for model input
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        start_time = time.time()
+        detections = detector.detect_balls(frame_rgb)
+        end_time = time.time()
+        inference_time = (end_time - start_time) * 1000 # convert to ms
+        total_inference_time += inference_time
+
+        # target_size is the input_shape of the model (width, height)
+        display_frame = draw_bbox(frame, detections, target_size=(detector.input_shape[1], detector.input_shape[0]))
+
+        if output_path:
+            out.write(display_frame)
+        else:
+            cv2.imshow("Ball Detection", display_frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'): # press 'q' to quit
+                logging.info("User requested quit.")
+                break
+    
+    cap.release()
+    if out:
+        out.release()
+    cv2.destroyAllWindows()
+
+    if frame_count > 0:
+        avg_inference_time = total_inference_time / frame_count
+        logging.info(f"Average inference time per frame: {avg_inference_time:.2f} ms")
+        logging.info(f"Estimated FPS (processing only): {1000 / avg_inference_time:.2f}")
 
 def main():
-    parser = argparse.ArgumentParser(description='Ball tracking system')
-    parser.add_argument('--mode', type=str, required=True, 
-                       choices=['train', 'process', 'test', 'analyze'],
-                       help='Operation mode')
-    parser.add_argument('--dataset', type=str, default='ball_dataset',
-                       help='Path to ball dataset (for training)')
-    parser.add_argument('--model', type=str, default='balltracker/ball_detection_model.keras',
-                       help='Path to trained model')
-    parser.add_argument('--video', type=str,
-                       help='Path to input video (for processing)')
+    parser = argparse.ArgumentParser(description='Run ball detection on image or video.')
+    parser.add_argument('--model', type=str, default='balltracker/ball_detection_model_final.keras',
+                        help='Path to the trained Keras model file.')
     parser.add_argument('--image', type=str,
-                       help='Path to input image (for testing)')
+                        help='Path to an input image file for detection.')
+    parser.add_argument('--video', type=str,
+                        help='Path to an input video file for detection.')
+    parser.add_argument('--webcam', type=int,
+                        help='Webcam ID (e.g., 0 for default webcam) for live detection.')
     parser.add_argument('--output', type=str,
-                       help='Path to output video')
-    parser.add_argument('--epochs', type=int, default=50,
-                       help='Number of training epochs')
-    parser.add_argument('--batch-size', type=int, default=32,
-                       help='Training batch size')
-    parser.add_argument('--no-preview', action='store_true',
-                       help='Disable video preview')
+                        help='Optional path to save the output image or video.')
     
     args = parser.parse_args()
-    
-    # Create balltracker directory if it doesn't exist
+
+    # ensure balltracker directory exists for logs/output
     Path('balltracker').mkdir(exist_ok=True)
-    
-    if args.mode == 'train':
-        # Train model
-        if not Path(args.dataset).exists():
-            logging.error(f"Dataset not found: {args.dataset}")
-            return
-        
-        detector = train_model(args.dataset, args.epochs, args.batch_size)
-        
-    elif args.mode == 'process':
-        # Process video
-        if not args.video:
-            logging.error("Video path required for processing mode")
-            return
-        
-        if not Path(args.video).exists():
-            logging.error(f"Video not found: {args.video}")
-            return
-        
-        trajectories = process_video(
-            video_path=args.video,
-            model_path=args.model if Path(args.model).exists() else None,
-            output_path=args.output,
-            show_preview=not args.no_preview
+
+    logging.info("=" * 60)
+    logging.info("BALL TRACKER INFERENCE SCRIPT")
+    logging.info("=" * 60)
+    logging.info(f"Arguments: {vars(args)}")
+
+    if not Path(args.model).exists():
+        logging.error(f"Error: Model file not found at {args.model}. Please train the model first or provide a correct path.")
+        sys.exit(1)
+
+    logging.info("Loading ball detector model...")
+    # custom objects needed for loading a model saved with custom loss/metrics
+    detector = BallDetector()
+    try:
+        detector.model = tf.keras.models.load_model(
+            args.model,
+            custom_objects={
+                'detection_loss': detection_loss,
+                'calculate_iou_tf': calculate_iou_tf,
+                'calculate_ciou_tf': calculate_ciou_tf, # make sure this is available if used in loss
+                'MeanIoUForBBoxes': MeanIoUForBBoxes, # for custom metrics
+                'ConfAccuracy': ConfAccuracy # for custom metrics
+            }
         )
-        
-        # Analyze trajectories
-        analyze_trajectory(trajectories)
-        
-    elif args.mode == 'test':
-        # Test detection on image
-        if not args.image:
-            logging.error("Image path required for test mode")
-            return
-        
-        if not Path(args.image).exists():
-            logging.error(f"Image not found: {args.image}")
-            return
-        
-        detections = test_detection_on_image(args.image, args.model)
-        
-    elif args.mode == 'analyze':
-        # Analyze dataset
-        if not Path(args.dataset).exists():
-            logging.error(f"Dataset not found: {args.dataset}")
-            return
-        
-        from train_ball_detector import analyze_dataset
-        analyze_dataset(args.dataset)
+        logging.info(f"Model loaded successfully from {args.model}")
+    except Exception as e:
+        logging.error(f"Failed to load model {args.model}: {e}")
+        logging.exception("Full traceback for model loading:")
+        sys.exit(1)
+
+    # warm up the model for accurate timing
+    logging.info("Warming up the model...")
+    dummy_image = np.zeros((detector.input_shape[0], detector.input_shape[1], detector.input_shape[2]), dtype=np.uint8)
+    detector.detect_balls(dummy_image)
+    logging.info("Model warm-up complete.")
+
+    if args.image:
+        process_image(detector, args.image, args.output)
+    elif args.video:
+        process_video(detector, args.video, args.output)
+    elif args.webcam is not None:
+        process_video(detector, None, args.output, args.webcam)
+    else:
+        logging.warning("No input specified. Use --image, --video, or --webcam.")
+        parser.print_help()
+    
+    logging.info("=" * 60)
+    logging.info("BALL TRACKER INFERENCE COMPLETE")
+    logging.info("=" * 60)
 
 if __name__ == "__main__":
-    main() 
+    main()
