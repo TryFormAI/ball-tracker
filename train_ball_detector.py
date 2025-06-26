@@ -13,25 +13,27 @@ from datetime import datetime
 from tensorflow.keras.utils import Sequence
 import albumentations as A
 
-# Add parent directory to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
+# Fix for Colab import issues - force add current directory to path
+current_dir = Path(__file__).parent.absolute()
+sys.path.insert(0, str(current_dir))
+
+# Clear any cached modules to force fresh import
+if 'ball_detector' in sys.modules:
+    del sys.modules['ball_detector']
 
 # Set up detailed logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('balltracker/training.log'),
         logging.StreamHandler()
     ]
 )
 
-# Import the BallDetector from your module
-from ball_detector import BallDetector, detection_loss, calculate_iou_tf, calculate_ciou_tf
+# Now import the ball_detector module
+from ball_detector import BallDetector, detection_loss, calculate_iou_tf
 
 # Define custom metrics for evaluation
-# Added decorator for Keras serialization
-@tf.keras.saving.register_keras_serializable()
 class MeanIoUForBBoxes(tf.keras.metrics.Mean):
     def __init__(self, name='mean_iou_for_bboxes', **kwargs):
         super().__init__(name=name, **kwargs)
@@ -64,7 +66,6 @@ class MeanIoUForBBoxes(tf.keras.metrics.Mean):
         bbox_pred_pos = tf.boolean_mask(bbox_pred, object_mask)
 
         # calculate IoU for positive samples
-        # still use calculate_iou_tf for the metric, as it's the raw overlap value
         iou = calculate_iou_tf(bbox_true_pos, bbox_pred_pos)
         
         # update total IoU and count
@@ -80,8 +81,6 @@ class MeanIoUForBBoxes(tf.keras.metrics.Mean):
         self.num_examples.assign(0.0)
 
 
-# Added decorator for Keras serialization
-@tf.keras.saving.register_keras_serializable()
 class ConfAccuracy(tf.keras.metrics.BinaryAccuracy):
     def __init__(self, name='conf_accuracy', threshold=0.5, **kwargs):
         super().__init__(name=name, threshold=threshold, **kwargs)
@@ -222,7 +221,8 @@ class BallDatasetSequence(Sequence):
 def train_model(dataset_path: str,
                 epochs: int = 50,
                 batch_size: int = 32,
-                learning_rate: float = 0.001):
+                learning_rate: float = 0.001,
+                resume_model_path: str = None):
     logging.info("=" * 60)
     logging.info("STARTING BALL DETECTION MODEL TRAINING (MEMORY EFFICIENT)")
     logging.info("=" * 60)
@@ -232,10 +232,12 @@ def train_model(dataset_path: str,
     logging.info(f"  - Batch size: {batch_size}")
     logging.info(f"  - Learning rate: {learning_rate}")
     logging.info(f"  - Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    if resume_model_path:
+        logging.info(f"  - Resuming from model: {resume_model_path}")
 
     # Data generators
-    train_gen = BallDatasetSequence(dataset_path, 'train', batch_size=batch_size, shuffle=True, augment=True)
-    val_gen = BallDatasetSequence(dataset_path, 'valid', batch_size=batch_size, shuffle=False, augment=False)
+    train_gen = BallDatasetSequence(dataset_path, 'train', batch_size=batch_size, shuffle=True, augment=True) # added augment=True
+    val_gen = BallDatasetSequence(dataset_path, 'valid', batch_size=batch_size, shuffle=False, augment=False) # added augment=False
 
     logging.info(f"Data summary:")
     logging.info(f"  - Training batches: {len(train_gen)}")
@@ -245,16 +247,32 @@ def train_model(dataset_path: str,
     # Initialize detector
     logging.info("Initializing ball detector...")
     detector = BallDetector()
-    logging.info("Building model architecture...")
-    detector.model = detector.build_model()
+    if resume_model_path and Path(resume_model_path).exists():
+        logging.info(f"Loading model weights from {resume_model_path} for resuming training...")
+        detector.model = tf.keras.models.load_model(
+            resume_model_path,
+            custom_objects={
+                'detection_loss': detection_loss,
+                'calculate_iou_tf': calculate_iou_tf,
+                'MeanIoUForBBoxes': MeanIoUForBBoxes,
+                'ConfAccuracy': ConfAccuracy
+            }
+        )
+        # Recompile with possibly new learning rate and metrics
+        detector.model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+            loss=detection_loss,
+            metrics=[MeanIoUForBBoxes(), ConfAccuracy()]
+        )
+    else:
+        logging.info("Building model architecture...")
+        detector.model = detector.build_model()
+        detector.model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+            loss=detection_loss,
+            metrics=[MeanIoUForBBoxes(), ConfAccuracy()]
+        )
     
-    # Recompile with custom metrics (or include them in build_model)
-    detector.model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate, clipnorm=1.0),
-        loss=detection_loss,
-        metrics=[MeanIoUForBBoxes(), ConfAccuracy()]
-    )
-
     logging.info("Model architecture:")
     detector.model.summary(print_fn=logging.info)
     total_params = detector.model.count_params()
@@ -276,12 +294,12 @@ def train_model(dataset_path: str,
         validation_data=val_gen,
         epochs=epochs,
         callbacks=[
-            tf.keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True, monitor='val_loss'),
-            tf.keras.callbacks.ReduceLROnPlateau(patience=5, factor=0.5, monitor='val_loss', min_lr=1e-7),
+            tf.keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True, monitor='val_loss'), # monitor validation loss
+            tf.keras.callbacks.ReduceLROnPlateau(patience=5, factor=0.5, monitor='val_loss'), # monitor validation loss
             tf.keras.callbacks.ModelCheckpoint(
                 'balltracker/best_model.keras',
                 save_best_only=True,
-                monitor='val_loss',
+                monitor='val_loss', # always monitor validation loss for saving best model
                 mode='min',
                 verbose=1
             ),
@@ -294,7 +312,7 @@ def train_model(dataset_path: str,
 
     # Evaluate model (using the best saved model)
     logging.info("Loading best model for final evaluation and saving...")
-    detector.load_model('balltracker/best_model.keras')
+    detector.load_model('balltracker/best_model.keras') # Load the best model saved by ModelCheckpoint
 
     logging.info("Evaluating model on validation set (using best weights)...")
     # Evaluate with the metrics defined in compile
@@ -425,8 +443,7 @@ def evaluate_model(dataset_path: str, model_path: str, batch_size: int = 32):
                 'detection_loss': detection_loss,
                 'calculate_iou_tf': calculate_iou_tf, # make sure this is passed if used by loss/metrics
                 'MeanIoUForBBoxes': MeanIoUForBBoxes, # for loading the custom metric
-                'ConfAccuracy': ConfAccuracy, # for loading the custom metric
-                'calculate_ciou_tf': calculate_ciou_tf # new custom object
+                'ConfAccuracy': ConfAccuracy # for loading the custom metric
             }
         )
         logging.info(f"Model loaded from {model_path}")
@@ -449,10 +466,7 @@ def evaluate_model(dataset_path: str, model_path: str, batch_size: int = 32):
     
     logging.info(f"  - Evaluation time: {evaluation_time:.2f} seconds")
     
-    # you can add more detailed, post-evaluation metrics here if needed,
-    # such as calculating precise precision/recall/F1 based on confidence and IoU thresholds.
-    # however, the custom metrics `MeanIoUForBBoxes` and `ConfAccuracy` already give good indicators.
-
+    
     logging.info("=" * 40)
     logging.info("EVALUATION COMPLETED")
     logging.info("=" * 40)
@@ -590,6 +604,8 @@ def main():
                         help='Only analyze dataset, don\'t train')
     parser.add_argument('--evaluate', type=str,
                         help='Evaluate trained model (provide model path)')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='Resume training from a given model checkpoint (.keras)')
     args = parser.parse_args()
 
     Path('balltracker').mkdir(exist_ok=True) # ensure the output directory exists
@@ -600,7 +616,7 @@ def main():
     logging.info(f"Arguments: {vars(args)}")
 
     if not check_dataset_structure(args.dataset):
-        logging.error(f"Dataset validation failed. Please check the dataset structure at {args.dataset}.")
+        logging.error("Dataset validation failed. Please check the dataset structure.")
         sys.exit(1) # exit if dataset structure is bad
 
     analyze_dataset(args.dataset)
@@ -622,7 +638,8 @@ def main():
             dataset_path=args.dataset,
             epochs=args.epochs,
             batch_size=args.batch_size,
-            learning_rate=args.learning_rate
+            learning_rate=args.learning_rate,
+            resume_model_path=args.resume
         )
         if detector:
             logging.info("Training process completed.")
