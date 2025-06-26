@@ -97,6 +97,15 @@ class MeanIoUForBBoxes(tf.keras.metrics.Metric):
         self.total_iou.assign(0.0)
         self.count.assign(0.0)
 
+class ConfAccuracy(tf.keras.metrics.BinaryAccuracy):
+    def __init__(self, name='conf_accuracy', threshold=0.5, **kwargs):
+        super().__init__(name=name, threshold=threshold, **kwargs)
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        conf_true = y_true[:, 4]
+        conf_pred = y_pred[:, 4]
+        super().update_state(conf_true, conf_pred, sample_weight)
+
 class BallDetector:
     # Using CNN architecture for ball detection
     
@@ -138,11 +147,11 @@ class BallDetector:
         
         model = tf.keras.Model(inputs=base_model.input, outputs=outputs)
         
-        # Compile model with custom metric
+        # Compile model with custom metrics
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
             loss=detection_loss,
-            metrics=[MeanIoUForBBoxes()]
+            metrics=[MeanIoUForBBoxes(), ConfAccuracy()]
         )
         logging.info("Model built successfully.")
         return model
@@ -188,7 +197,8 @@ class BallDetector:
                 custom_objects={
                     'detection_loss': detection_loss,
                     'calculate_iou_tf': calculate_iou_tf,
-                    'MeanIoUForBBoxes': MeanIoUForBBoxes
+                    'MeanIoUForBBoxes': MeanIoUForBBoxes,
+                    'ConfAccuracy': ConfAccuracy
                 }
             )
             logging.info(f"Model loaded from {model_path}")
