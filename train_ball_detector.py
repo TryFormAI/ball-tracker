@@ -26,7 +26,6 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('balltracker/training.log'),
         logging.StreamHandler()
     ]
 )
@@ -222,7 +221,8 @@ class BallDatasetSequence(Sequence):
 def train_model(dataset_path: str,
                 epochs: int = 50,
                 batch_size: int = 32,
-                learning_rate: float = 0.001):
+                learning_rate: float = 0.001,
+                resume_model_path: str = None):
     logging.info("=" * 60)
     logging.info("STARTING BALL DETECTION MODEL TRAINING (MEMORY EFFICIENT)")
     logging.info("=" * 60)
@@ -232,6 +232,8 @@ def train_model(dataset_path: str,
     logging.info(f"  - Batch size: {batch_size}")
     logging.info(f"  - Learning rate: {learning_rate}")
     logging.info(f"  - Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    if resume_model_path:
+        logging.info(f"  - Resuming from model: {resume_model_path}")
 
     # Data generators
     train_gen = BallDatasetSequence(dataset_path, 'train', batch_size=batch_size, shuffle=True, augment=True) # added augment=True
@@ -244,17 +246,33 @@ def train_model(dataset_path: str,
 
     # Initialize detector
     logging.info("Initializing ball detector...")
-    detector = BallDetector() # Instantiate BallDetector without loading a pre-existing model if we intend to train
-    logging.info("Building model architecture...")
-    detector.model = detector.build_model() # This method already compiles the model
+    detector = BallDetector()
+    if resume_model_path and Path(resume_model_path).exists():
+        logging.info(f"Loading model weights from {resume_model_path} for resuming training...")
+        detector.model = tf.keras.models.load_model(
+            resume_model_path,
+            custom_objects={
+                'detection_loss': detection_loss,
+                'calculate_iou_tf': calculate_iou_tf,
+                'MeanIoUForBBoxes': MeanIoUForBBoxes,
+                'ConfAccuracy': ConfAccuracy
+            }
+        )
+        # Recompile with possibly new learning rate and metrics
+        detector.model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+            loss=detection_loss,
+            metrics=[MeanIoUForBBoxes(), ConfAccuracy()]
+        )
+    else:
+        logging.info("Building model architecture...")
+        detector.model = detector.build_model()
+        detector.model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+            loss=detection_loss,
+            metrics=[MeanIoUForBBoxes(), ConfAccuracy()]
+        )
     
-    # Recompile with custom metrics (or include them in build_model)
-    detector.model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-        loss=detection_loss,
-        metrics=[MeanIoUForBBoxes(), ConfAccuracy()] # Use custom metrics here
-    )
-
     logging.info("Model architecture:")
     detector.model.summary(print_fn=logging.info)
     total_params = detector.model.count_params()
@@ -586,6 +604,8 @@ def main():
                         help='Only analyze dataset, don\'t train')
     parser.add_argument('--evaluate', type=str,
                         help='Evaluate trained model (provide model path)')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='Resume training from a given model checkpoint (.keras)')
     args = parser.parse_args()
 
     Path('balltracker').mkdir(exist_ok=True) # ensure the output directory exists
@@ -618,7 +638,8 @@ def main():
             dataset_path=args.dataset,
             epochs=args.epochs,
             batch_size=args.batch_size,
-            learning_rate=args.learning_rate
+            learning_rate=args.learning_rate,
+            resume_model_path=args.resume
         )
         if detector:
             logging.info("Training process completed.")
