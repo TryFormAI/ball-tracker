@@ -85,10 +85,14 @@ class MeanIoUForBBoxes(tf.keras.metrics.Metric):
         mask = tf.cast(y_true[:, 4] > 0.5, tf.bool)
         true_boxes = tf.boolean_mask(y_true[:, :4], mask)
         pred_boxes = tf.boolean_mask(y_pred[:, :4], mask)
-        if tf.size(true_boxes) > 0:
+        num_true_boxes = tf.shape(true_boxes)[0]
+
+        def update():
             iou = calculate_iou_tf(true_boxes, pred_boxes)
             self.total_iou.assign_add(tf.reduce_sum(iou))
             self.count.assign_add(tf.cast(tf.size(iou), tf.float32))
+
+        tf.cond(num_true_boxes > 0, update, lambda: None)
 
     def result(self):
         return tf.math.divide_no_nan(self.total_iou, self.count)
