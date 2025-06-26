@@ -1,0 +1,7 @@
+tensorflow>=2.8
+numpy
+opencv-python
+matplotlib
+albumentations
+scikit-learn
+h5py 
