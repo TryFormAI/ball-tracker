@@ -27,6 +27,9 @@ def main():
                         help='Learning rate')
     parser.add_argument('--weights', type=str, default='',
                         help='Path to pretrained weights (optional)')
+    parser.add_argument('--export-format', type=str, default='tflite',
+                        choices=['tflite', 'onnx', 'torchscript', 'coreml'],
+                        help='Export format for mobile/edge deployment (default: tflite)')
     args = parser.parse_args()
 
     Path('models').mkdir(exist_ok=True)
@@ -36,10 +39,13 @@ def main():
     logging.info("=" * 60)
     logging.info(f"Arguments: {vars(args)}")
 
-    model = YOLO('yolov11.yaml')
-    
+    # Setup YOLO model
     if args.weights:
-        model.load(args.weights)
+        model = YOLO(args.weights)  # Load from provided weights
+        logging.info(f"Loaded YOLO model from weights: {args.weights}")
+    else:
+        model = YOLO("yolo11n.pt")
+        logging.info("Initialized new YOLO model (yolo11n.pt)")
 
     # Train
     results = model.train(
@@ -60,6 +66,13 @@ def main():
     )
 
     logging.info("Training complete. Best weights and results saved in the 'models/yolo_ball' directory.")
+
+    # Export the model for mobile/edge deployment
+    export_path = f"models/yolo_ball/best_model.{args.export_format}"
+    logging.info(f"Exporting model to {args.export_format} format for mobile/edge deployment...")
+    model.export(format=args.export_format, dynamic=False, optimize=True, half=False, int8=False, imgsz=640, device='cpu',
+                 project='models', name='yolo_ball', exist_ok=True)
+    logging.info(f"Model exported to {args.export_format} format. See 'models/yolo_ball' directory.")
 
 if __name__ == "__main__":
     main()
