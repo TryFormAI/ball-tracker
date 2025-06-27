@@ -39,3 +39,7 @@ cmd.txt
 data/
 
 balltracker/
+
+*.onnx
+
+runs/
