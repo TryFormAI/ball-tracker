@@ -48,14 +48,9 @@ def main():
         logging.info("Initialized new YOLO model (yolo11n.pt)")
 
     # Train
+    data_yaml_path = str(Path(args.dataset) / 'data.yaml')
     results = model.train(
-        data={
-            'train': str(Path(args.dataset) / 'train'),
-            'val': str(Path(args.dataset) / 'valid'),
-            'test': str(Path(args.dataset) / 'test'),
-            'nc': 1,  # number of classes
-            'names': ['golf_ball']
-        },
+        data=data_yaml_path,
         epochs=args.epochs,
         imgsz=640,
         batch=args.batch_size,
