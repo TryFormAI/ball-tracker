@@ -4,8 +4,8 @@ from pathlib import Path
 import logging
 import argparse
 
-# Add YOLOv11 import
-from yolov11 import YOLO
+# Add YOLO import (corrected)
+from ultralytics import YOLO
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,7 +16,7 @@ logging.basicConfig(
 )
 
 def main():
-    parser = argparse.ArgumentParser(description='Train ball detection model with YOLOv11')
+    parser = argparse.ArgumentParser(description='Train ball detection model with YOLO')
     parser.add_argument('--dataset', type=str, default='data',
                         help='Path to ball dataset directory (should contain train, valid, test folders in YOLO format)')
     parser.add_argument('--epochs', type=int, default=50,
@@ -32,12 +32,12 @@ def main():
     Path('models').mkdir(exist_ok=True)
 
     logging.info("=" * 60)
-    logging.info("YOLOv11 BALL DETECTION TRAINING SCRIPT")
+    logging.info("YOLO BALL DETECTION TRAINING SCRIPT")
     logging.info("=" * 60)
     logging.info(f"Arguments: {vars(args)}")
 
-    # Setup YOLOv11 model
-    model = YOLO('yolov11.yaml')  # or use a custom config if needed
+    model = YOLO('yolov11.yaml')
+    
     if args.weights:
         model.load(args.weights)
 
@@ -55,11 +55,11 @@ def main():
         batch=args.batch_size,
         lr0=args.learning_rate,
         project='models',
-        name='yolov11_ball',
+        name='yolo_ball',
         exist_ok=True
     )
 
-    logging.info("Training complete. Best weights and results saved in the 'models/yolov11_ball' directory.")
+    logging.info("Training complete. Best weights and results saved in the 'models/yolo_ball' directory.")
 
 if __name__ == "__main__":
     main()
