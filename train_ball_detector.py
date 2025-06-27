@@ -30,6 +30,8 @@ def main():
     parser.add_argument('--export-format', type=str, default='tflite',
                         choices=['tflite', 'onnx', 'torchscript', 'coreml'],
                         help='Export format for mobile/edge deployment (default: tflite)')
+    parser.add_argument('--resume', action='store_true',
+                        help='Resume training from the last checkpoint in models/yolo_ball (if available).')
     args = parser.parse_args()
 
     Path('models').mkdir(exist_ok=True)
@@ -57,7 +59,8 @@ def main():
         lr0=args.learning_rate,
         project='models',
         name='yolo_ball',
-        exist_ok=True
+        exist_ok=True,
+        resume=args.resume
     )
 
     logging.info("Training complete. Best weights and results saved in the 'models/yolo_ball' directory.")

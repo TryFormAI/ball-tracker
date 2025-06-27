@@ -5,6 +5,7 @@ import argparse
 from pathlib import Path
 from typing import List, Dict, Optional, Union
 import onnxruntime as ort
+from collections import deque
 
 # Configure logging for detailed debugging.
 # Set level to logging.INFO for general progress messages.
@@ -388,6 +389,17 @@ def main():
         detector = BallDetector(model_path=args.model, confidence_threshold=args.conf)
         logging.info(f"Model loaded successfully from {args.model}.")
 
+        # --- Trajectory/Tracer State (for video only) ---
+        trajectory = deque(maxlen=100)  # Store up to 100 points
+        impact_detected = False
+        last_center = None
+        impact_distance_thresh = 20  # pixels, adjust as needed
+
+        # For extrapolation when ball is lost
+        extrapolation_frames = 0
+        max_extrapolation = 100  # Only extrapolate for up to 100 frames after losing the ball
+        arc_generated = False
+
         # --- Process a single image if --image argument is provided ---
         if args.image:
             logging.info(f"Processing a single image: '{args.image}'.")
@@ -429,7 +441,7 @@ def main():
             cv2.imshow('Ball Detection - Image', output_image_frame)
             logging.info("Image displayed. Press any key on the window to close it.")
             cv2.waitKey(0)
-            cv2.destroyAllWindows()
+            cv.destroyAllWindows()
             exit(0) # Exit the script after processing the image
 
         # --- If no image, then we're dealing with video or webcam input ---
@@ -483,6 +495,63 @@ def main():
             # Perform ball detection on the current frame
             detections = detector.detect_balls(frame.copy()) # Pass a copy to avoid modifying original frame
 
+            # --- Ball Tracing Logic ---
+            # Only consider the most confident detection (if any)
+            if detections:
+                # Sort detections by confidence, descending
+                detections = sorted(detections, key=lambda d: d['confidence'], reverse=True)
+                main_det = detections[0]
+                center = main_det['center']
+
+                # Detect impact (ball starts moving)
+                if last_center is not None:
+                    dist = np.linalg.norm(np.array(center) - np.array(last_center))
+                    if not impact_detected and dist > impact_distance_thresh:
+                        impact_detected = True
+                        logging.info(f"Impact detected at frame {frame_count} (distance moved: {dist:.1f})")
+                last_center = center
+
+                # If impact detected, add to trajectory
+                if impact_detected:
+                    trajectory.append(center)
+                    extrapolation_frames = 0  # Reset extrapolation when ball is found
+                    arc_generated = False  # Reset arc flag if ball is found again
+            else:
+                # No detection, do not update last_center
+                # If impact detected and we have at least 2 points, extrapolate
+                frame_h, frame_w = frame.shape[:2]
+                if impact_detected and len(trajectory) >= 2 and extrapolation_frames < max_extrapolation and not arc_generated:
+                    pt1 = np.array(trajectory[-2])
+                    pt2 = np.array(trajectory[-1])
+                    velocity = pt2 - pt1
+                    extrapolated = (pt2 + velocity).astype(int)
+                    # Check if extrapolated point is out of bounds
+                    out_of_bounds = not (0 <= extrapolated[0] < frame_w and 0 <= extrapolated[1] < frame_h)
+                    if extrapolation_frames > 20 or out_of_bounds:
+                        # Generate a parabolic arc for landing
+                        arc_points = []
+                        arc_len = 30  # Number of points in the arc
+                        start = pt2
+                        # End point: x continues, y is bottom of frame
+                        end_x = int(pt2[0] + velocity[0] * 1.5)
+                        end_x = max(0, min(end_x, frame_w - 1))
+                        end_y = frame_h - 1
+                        for t in np.linspace(0, 1, arc_len):
+                            # Parabola: interpolate x, y with a curve
+                            x = int((1 - t) * start[0] + t * end_x)
+                            # Parabolic y: start to end_y, with a curve
+                            y = int((1 - t) * start[1] + t * end_y - 0.25 * np.sin(np.pi * t) * abs(velocity[1]))
+                            y = min(y, frame_h - 1)
+                            arc_points.append((x, y))
+                        trajectory.extend(arc_points)
+                        arc_generated = True
+                        logging.info(f"Landing arc generated at frame {frame_count}.")
+                    else:
+                        trajectory.append(tuple(extrapolated))
+                        last_center = tuple(extrapolated)
+                        extrapolation_frames += 1
+                # If not enough points or max extrapolation reached or arc already generated, do not update trajectory
+
             # --- Draw Detections on the Frame ---
             for det in detections:
                 x, y, w, h = det['bbox']
@@ -492,13 +561,20 @@ def main():
 
                 color = (0, 255, 0) # Green color for bounding boxes
                 cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2) # Draw the bounding box
-                
                 label = f"{class_name}: {conf:.2f}" # Create text label (e.g., "golf_ball: 0.95")
-                # Position the text label slightly above the box, or below if too close to the top
                 cv2.putText(frame, label, (x, y - 10 if y - 10 > 0 else y + h + 20),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-                
                 cv2.circle(frame, (center_x, center_y), 5, (0, 0, 255), -1) # Draw a red dot at the center
+
+            # --- Draw Tracer (Trajectory) ---
+            if impact_detected and len(trajectory) > 1:
+                tracer_color = (255, 0, 0)  # Blue
+                for i in range(1, len(trajectory)):
+                    pt1 = trajectory[i-1]
+                    pt2 = trajectory[i]
+                    cv2.line(frame, pt1, pt2, tracer_color, 2)
+                    cv2.circle(frame, pt1, 2, tracer_color, -1)
+                    cv2.circle(frame, pt2, 2, tracer_color, -1)
 
             # Display the processed frame in a window (for real-time viewing)
             cv2.imshow('Ball Detection Feed', frame)
