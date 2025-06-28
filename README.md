@@ -1,15 +1,15 @@
-# Ball Tracking System
+# Golf Ball and Club Detection System
 
-A comprehensive ball detection and tracking system for golf videos that can identify balls and draw tracers behind them once they've been hit.
+A comprehensive computer vision system for detecting and tracking golf balls and clubs in videos using ONNX-based YOLO models. This system can identify golf balls and segment golf clubs with precise outlines in real-time video processing.
 
 ## Features
 
-- **Ball Detection**: CNN-based model using EfficientNetB0 for accurate ball detection
-- **Ball Tracking**: Multi-object tracking with trajectory recording
-- **Impact Detection**: Automatic detection of when balls are hit
-- **Trajectory Visualization**: Real-time tracer drawing with color-coded trajectories
-- **Video Processing**: Support for processing entire videos with output saving
-- **Model Training**: Complete training pipeline for custom datasets
+- **Golf Ball Detection**: ONNX-based YOLO model for accurate ball detection and tracking
+- **Golf Club Segmentation**: Advanced segmentation model that draws precise club outlines
+- **Real-time Processing**: Fast inference using ONNX Runtime for live video feeds
+- **Multi-format Support**: Process videos, images, or webcam feeds
+- **Customizable Output**: Configurable confidence thresholds and visualization options
+- **Pre-trained Models**: Includes trained models for both ball detection and club segmentation
 
 ## Installation
 
@@ -18,185 +18,179 @@ A comprehensive ball detection and tracking system for golf videos that can iden
 pip install -r requirements.txt
 ```
 
-2. Ensure you have the ball dataset in the correct structure:
+2. Ensure you have the required models:
 ```
-ball_dataset/
-├── train/
-│   ├── _annotations.coco.json
-│   ├── image1.jpg
-│   ├── image2.jpg
-│   └── ...
-├── test/
-│   ├── _annotations.coco.json
-│   ├── image1.jpg
-│   └── ...
-└── valid/
-    ├── _annotations.coco.json
-    ├── image1.jpg
-    └── ...
+models/
+├── best_ball.onnx      # Pre-trained golf ball detection model
+└── best_club.onnx      # Pre-trained golf club segmentation model
 ```
 
 ## Usage
 
-### 1. Analyze Dataset
+### Golf Ball Detection
 
-First, analyze your ball dataset to understand its structure:
-
-```bash
-python train_ball_detector.py --analyze-only --dataset ball_dataset
-```
-
-### 2. Train the Model
-
-Train the ball detection model on your dataset:
+Process videos or images for ball detection:
 
 ```bash
-python train_ball_detector.py --dataset ball_dataset --epochs 50 --batch-size 32
+# Process a video file
+python run_ball_tracker.py --video path/to/video.mp4 --output output_video.mp4
+
+# Process a single image
+python run_ball_tracker.py --image path/to/image.jpg --output output_image.jpg
+
+# Use webcam for live detection
+python run_ball_tracker.py --webcam 0
+
+# Use custom model
+python run_ball_tracker.py --model models/best_ball.onnx --video golf_swing.mp4
 ```
 
-Training options:
-- `--epochs`: Number of training epochs (default: 50)
-- `--batch-size`: Training batch size (default: 32)
-- `--learning-rate`: Learning rate (default: 0.001)
+### Golf Club Segmentation
 
-### 3. Process Videos
-
-Process a video with ball tracking:
+Segment and draw club outlines:
 
 ```bash
-python run_ball_tracker.py --mode process --video path/to/video.mp4 --output balltracker/output.mp4
+# Process video with club segmentation
+python club_detect.py --model models/best_club.onnx --video golf_swing.mp4 --output club_output.mp4
+
+# Process single image
+python club_detect.py --model models/best_club.onnx --image golf_image.jpg --output club_image.jpg
+
+# Use webcam for live club detection
+python club_detect.py --model models/best_club.onnx --webcam 0
+
+# Customize confidence threshold and outline appearance
+python club_detect.py --model models/best_club.onnx --video golf_swing.mp4 --conf 0.3 --outline-color "(255,0,0)" --outline-thickness 3
 ```
 
-Processing options:
-- `--video`: Input video path
-- `--output`: Output video path (optional)
-- `--model`: Path to trained model (default: balltracker/ball_detection_model.h5)
-- `--no-preview`: Disable video preview
+## Command Line Options
 
-### 4. Test Detection on Images
+### Ball Detection (`run_ball_tracker.py`)
+- `--model`: Path to ONNX model file (default: `balltracker/ball_detection_model_final.keras`)
+- `--video`: Input video file path
+- `--image`: Input image file path
+- `--webcam`: Webcam ID (e.g., 0 for default webcam)
+- `--output`: Output file path for processed video/image
 
-Test ball detection on a single image:
-
-```bash
-python run_ball_tracker.py --mode test --image path/to/image.jpg
-```
-
-### 5. Evaluate Model
-
-Evaluate a trained model on the test set:
-
-```bash
-python train_ball_detector.py --evaluate balltracker/ball_detection_model.h5 --dataset ball_dataset
-```
+### Club Segmentation (`club_detect.py`)
+- `--model`: Path to ONNX segmentation model file (required)
+- `--video`: Input video file path
+- `--image`: Input image file path
+- `--webcam`: Webcam ID for live processing
+- `--output`: Output file path
+- `--conf`: Confidence threshold (0.0 to 1.0, default: 0.5)
+- `--outline-color`: BGR color for outlines (default: "(0,255,0)" for green)
+- `--outline-thickness`: Thickness of outline (default: 2)
 
 ## System Architecture
 
-### BallDetector Class
-- **Purpose**: CNN-based ball detection using EfficientNetB0
-- **Input**: Images (224x224x3)
-- **Output**: Bounding boxes and confidence scores
-- **Features**: Custom loss function, model saving/loading
-
-### BallTracker Class
-- **Purpose**: Multi-object ball tracking with trajectory recording
+### BallDetector Class (`ball_detector.py`)
+- **Purpose**: ONNX-based YOLO model for golf ball detection
+- **Input**: Images (640x640x3 RGB)
+- **Output**: Bounding boxes with confidence scores
 - **Features**: 
-  - Impact detection (significant ball movement)
-  - Trajectory recording after impact
-  - Real-time visualization
-  - Multiple ball tracking
+  - Non-Maximum Suppression (NMS) for duplicate removal
+  - Confidence thresholding
+  - Coordinate transformation utilities
 
-### Training Pipeline
-- **Data Loading**: Handles COCO format with train/valid/test splits
-- **Preprocessing**: Image resizing, normalization, augmentation
-- **Training**: Early stopping, learning rate scheduling
-- **Evaluation**: Test set evaluation with metrics
+### ClubSegmenter Class (`club_detect.py`)
+- **Purpose**: ONNX-based YOLO segmentation model for golf club detection
+- **Input**: Images (640x640x3 RGB)
+- **Output**: Precise club outlines and bounding boxes
+- **Features**:
+  - Mask generation from segmentation coefficients
+  - Contour extraction for smooth outlines
+  - Real-time processing capabilities
 
-## Key Features
+### Processing Pipeline
+1. **Image Preprocessing**: Resize to 640x640, normalize to 0-1 range
+2. **ONNX Inference**: Run model inference using ONNX Runtime
+3. **Post-processing**: Apply NMS, confidence filtering, coordinate scaling
+4. **Visualization**: Draw bounding boxes or segmentation outlines
+5. **Output**: Save processed video/image or display live feed
 
-### Impact Detection
-The system automatically detects when a ball is hit by monitoring significant movement between frames. Once impact is detected, trajectory recording begins.
+## Model Details
 
-### Trajectory Visualization
-- Color-coded trajectories for multiple balls
-- Thickness based on detection confidence
-- Real-time drawing with fade effects
+### Ball Detection Model
+- **Architecture**: YOLO-based detection model
+- **Input Size**: 640x640 pixels
+- **Classes**: Golf ball (single class)
+- **Output**: Bounding boxes with confidence scores
 
-### Multi-Object Tracking
-- Tracks multiple balls simultaneously
-- Handles ball occlusion and re-detection
-- Maintains ball identity across frames
+### Club Segmentation Model
+- **Architecture**: YOLO-based segmentation model
+- **Input Size**: 640x640 pixels
+- **Classes**: Golf club (single class)
+- **Output**: Segmentation masks and bounding boxes
 
-### Performance Optimizations
-- EfficientNetB0 backbone for speed/accuracy balance
-- Batch processing for video frames
-- Early stopping to prevent overfitting
+## Performance
+
+- **Real-time Processing**: Optimized for live video feeds
+- **ONNX Runtime**: Fast inference using optimized execution providers
+- **Memory Efficient**: Minimal memory footprint for embedded applications
+- **Cross-platform**: Works on Windows, macOS, and Linux
 
 ## File Structure
 
 ```
-balltracker/
-├── ball_detector.py          # Ball detection model
-├── ball_tracker.py           # Ball tracking system
-├── train_ball_detector.py    # Training script
-├── run_ball_tracker.py       # Main execution script
-├── requirements.txt          # Dependencies
-├── README.md                 # This file
-├── ball_detection_model.h5   # Trained model (after training)
-└── training_history.png      # Training plots (after training)
+ball-tracker/
+├── ball_detector.py          # Ball detection implementation
+├── club_detect.py            # Club segmentation implementation
+├── run_ball_tracker.py       # Ball detection execution script
+├── train_ball_detector.py    # Training utilities (for reference)
+├── models/
+│   ├── best_ball.onnx        # Pre-trained ball detection model
+│   └── best_club.onnx        # Pre-trained club segmentation model
+├── videos/                   # Sample videos for testing
+├── outputs/                  # Output directory for processed files
+├── requirements.txt          # Python dependencies
+└── README.md                 # This file
 ```
-
-## Model Architecture
-
-The ball detection model uses:
-- **Backbone**: EfficientNetB0 (pre-trained on ImageNet)
-- **Head**: Custom detection head with dropout layers
-- **Output**: 5 values (x, y, width, height, confidence)
-- **Loss**: Combined bounding box MSE + confidence cross-entropy
-
-## Training Data Format
-
-The system expects COCO format annotations with:
-- Images in train/test/valid folders
-- `_annotations.coco.json` in each folder
-- Golf ball category with ID 1
-- Bounding box annotations in [x, y, width, height] format
 
 ## Examples
 
-### Basic Training
+### Basic Ball Detection
 ```bash
-# Analyze dataset first
-python train_ball_detector.py --analyze-only --dataset ball_dataset
+# Detect balls in a golf video
+python run_ball_tracker.py --video golf_swing.mp4 --output ball_tracked.mp4
 
-# Train model
-python train_ball_detector.py --dataset ball_dataset --epochs 100
-
-# Evaluate model
-python train_ball_detector.py --evaluate balltracker/ball_detection_model.h5 --dataset ball_dataset
+# Live ball detection from webcam
+python run_ball_tracker.py --webcam 0
 ```
 
-### Video Processing
+### Advanced Club Segmentation
 ```bash
-# Process video with preview
-python run_ball_tracker.py --mode process --video golf_swing.mp4
+# Segment clubs with custom settings
+python club_detect.py --model models/best_club.onnx --video golf_swing.mp4 \
+    --conf 0.4 --outline-color "(0,0,255)" --outline-thickness 3
 
-# Process video and save output
-python run_ball_tracker.py --mode process --video golf_swing.mp4 --output tracked_swing.mp4
-
-# Process without preview (faster)
-python run_ball_tracker.py --mode process --video golf_swing.mp4 --no-preview
+# Process single image for club detection
+python club_detect.py --model models/best_club.onnx --image golf_image.jpg
 ```
 
-### Testing
+### Combined Workflow
 ```bash
-# Test on single image
-python run_ball_tracker.py --mode test --image ball_image.jpg
+# First detect balls
+python run_ball_tracker.py --video input.mp4 --output ball_output.mp4
 
-# Test with custom model
-python run_ball_tracker.py --mode test --image ball_image.jpg --model custom_model.h5
+# Then segment clubs
+python club_detect.py --model models/best_club.onnx --video ball_output.mp4 --output final_output.mp4
 ```
 
+## Troubleshooting
+
+### Common Issues
+1. **Model not found**: Ensure ONNX model files are in the correct location
+2. **CUDA errors**: Use CPU execution provider if GPU is not available
+3. **Video codec issues**: Try different output formats (mp4, avi)
+4. **Performance issues**: Lower confidence thresholds or reduce input resolution
+
+### Performance Tips
+- Use `--conf` to adjust detection sensitivity
+- Process videos without preview for faster execution
+- Consider using GPU execution providers for better performance
+- Batch process multiple videos for efficiency
 
 ## License
 
-This project is licensed under the MIT license.
+This project is licensed under the MIT License - see the LICENSE file for details.
