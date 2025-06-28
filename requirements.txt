@@ -4,4 +4,6 @@ opencv-python
 matplotlib
 albumentations
 scikit-learn
-h5py 
+h5py
+yolov11
+torch 

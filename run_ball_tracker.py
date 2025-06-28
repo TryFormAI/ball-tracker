@@ -12,7 +12,7 @@ import time
 sys.path.append(str(Path(__file__).parent.parent))
 
 # Import the BallDetector and necessary custom objects
-from ball_detector import BallDetector, detection_loss, calculate_iou_tf, calculate_ciou_tf
+from ball_detector import BallDetector
 
 # Set up detailed logging
 logging.basicConfig(
@@ -206,23 +206,8 @@ def main():
 
     logging.info("Loading ball detector model...")
     # custom objects needed for loading a model saved with custom loss/metrics
-    detector = BallDetector()
-    try:
-        detector.model = tf.keras.models.load_model(
-            args.model,
-            custom_objects={
-                'detection_loss': detection_loss,
-                'calculate_iou_tf': calculate_iou_tf,
-                'calculate_ciou_tf': calculate_ciou_tf, # make sure this is available if used in loss
-                'MeanIoUForBBoxes': MeanIoUForBBoxes, # for custom metrics
-                'ConfAccuracy': ConfAccuracy # for custom metrics
-            }
-        )
-        logging.info(f"Model loaded successfully from {args.model}")
-    except Exception as e:
-        logging.error(f"Failed to load model {args.model}: {e}")
-        logging.exception("Full traceback for model loading:")
-        sys.exit(1)
+    detector = BallDetector(args.model)
+    logging.info(f"Model loaded successfully from {args.model}")
 
     # warm up the model for accurate timing
     logging.info("Warming up the model...")
